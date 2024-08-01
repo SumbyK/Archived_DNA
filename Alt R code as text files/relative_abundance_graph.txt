@@ -1,0 +1,103 @@
+### Bar plot for key phyla
+
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+
+
+Phyla_prelim <- read_xlsx("lvl2_Illumina_PacBio_export_from_QIIME2.xlsx")
+
+
+#convert year to a factor
+Phyla_prelim[, 'Year'] <- lapply(Phyla_prelim[, 'Year'], factor)
+Phyla_prelim
+
+# Melt the data, select the columns you want to keep, and filter for Abundance > 0
+subset_data <- subset(Phyla_prelim, select=c(index, 7:53))
+subset_data
+
+melted_data <- melt(subset_data, id=c("index"), variable.names = "Phyla",  value.name="sample_number")
+melted_data 
+
+subset_data2 <- subset(Phyla_prelim, select=c(index, Seq_platform, 7:53))
+subset_data2
+
+melted_data2 <- melt(subset_data2, id.vars = c("index", "Seq_platform"), 
+                    variable.name = "Sample", value.name = "Abundance")
+
+melted_data2
+
+write.csv(melted_data2,'melted_data2.csv')
+
+# Find the top 10 samples
+top_15_samples <- head(names(sort(table(melted_data2$Abundance), decreasing = TRUE)), 15)
+top_15_samples
+
+
+p__Proteobacteria
+p__Actinobacteriota
+p__Chloroflexi
+p__Firmicutes
+p__Cyanobacteria
+p__Bacteroidota
+p__Acidobacteriota
+p__Gemmatimonadota
+p__Planctomycetota
+p__Planctomycetes
+p__Myxococcota
+p__Verrucomicrobiota
+p__Bacteroidetes
+p__Desulfobacterota_B
+p__Patescibacteria
+p__Unclassified
+
+# Define the specific set of samples for the legend
+selected_samples <- c("p__Proteobacteria", "p__Actinobacteriota", "p__Chloroflexi", "p__Firmicutes", "p__Cyanobacteria",
+                      "p__Bacteroidota", "p__Acidobacteriota", "p__Gemmatimonadota", "p__Planctomycetota",
+                      "p__Planctomycetes", "p__Myxococcota", "p__Verrucomicrobiota", "p__Bacteroidetes",
+                      "p__Desulfobacterota_B", "p__Patescibacteria", "p__Unclassified")
+
+# Create the ggplot graph
+PrelimRA <- ggplot(melted_data2, aes(x = index, y = Abundance, fill = Sample)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Sample", y = "Abundance") +
+  scale_fill_manual(values = c("#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c","#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a", "#ffff99", "#b15928", "#8dd3c7",
+                               "#bebada", "#fb8072", "#80b1d3", "#fdb462", "#b3de69", "#fccde5", "#d9d9d9", "#bc80bd", "#ccebc5", "#ffed6f", "#5F7FC7", "orange",
+                               "#DA5724", "#508578", "#CD9BCD", "#AD6F3B", "#673770","#D14285", "#652926", "#C84248", "#CBD588","darkgray", "#8569D5", "#5E738F",
+                               "#D1A33D", "#8A7C64", "#599861", "blue", "orange", "green", "#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C",
+                               "#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#000000", "#D9D9D9", "#980043"),
+                    breaks = selected_samples) +  # Specify the legend items order
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  facet_grid(~ Seq_platform, scales = "free_y") +
+  ggtitle("Abundance by Sample") +
+  guides(fill = guide_legend(keywidth = 0.5, keyheight = 0.5, nrow = 16))
+
+PrelimRA
+
+# Create the ggplot graph stacked
+PrelimRA2 <- ggplot(melted_data2, aes(x = index, y = Abundance, fill = Sample)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Sample", y = "Relative abundance", fill = "Phylum") +
+  scale_fill_manual(values = c("#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c","#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a", "#980043","#D9D9D9", "#ffff99",  "#8dd3c7",
+                               "#D14285", "#CBD588",  "#000000","#bebada", "#80b1d3", "#fdb462", "#b3de69", "#fccde5", "#d9d9d9", "#bc80bd", "#ccebc5", "#ffed6f", "#5F7FC7", "orange",
+                               "#DA5724", "#508578", "#CD9BCD", "#AD6F3B", "#673770", "#652926", "#C84248","darkgray", "#8569D5", "#5E738F",
+                               "#D1A33D", "#8A7C64", "#599861", "blue", "orange", "green", "#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C",
+                               "#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928",  "#fb8072", "#b15928"),
+                    breaks = selected_samples) +  # Specify the legend items order
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  facet_grid(Seq_platform ~ ., scales = "free_y", switch = "y") +
+  ggtitle("Relative abundance by Sample (Phylum)") +
+  guides(fill = guide_legend(keywidth = 0.5, keyheight = 0.5, nrow = 16)) +
+  theme(axis.text.x = element_text(size = 12, face='bold'))+
+  theme(axis.title=element_text(size=14, face='bold'),
+        axis.text=element_text(size=14, face='bold'),
+        strip.text=element_text(size=14, face='bold'),
+        strip.background=element_rect(fill=NA, color='black', size=0.5),
+        panel.border=element_rect(fill=NA, color='black')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 14, hjust = 0.5, face='bold'),
+        legend.text=element_text(size=14), legend.title = element_text(size = 16, face='bold')) 
+
+PrelimRA2

@@ -1,0 +1,1331 @@
+#Load libraries
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(scales)
+library(grid)
+library(reshape2)
+library(phyloseq)
+library(readxl)
+
+# Set the path to the BIOM file
+biom_file <- "Export_merged/table-with-taxonomy.biom"
+
+# Import the BIOM file into a phyloseq object
+psPrelim <- import_biom(biom_file)
+psPrelim
+
+#Check tax labels in BIOM
+colnames(tax_table(psPrelim))
+
+#Check sample labels in BIOM
+colnames(otu_table(psPrelim))
+
+#rename tax labels
+colnames(tax_table(psPrelim)) <- c("Kingdom", "Phylum", "Class", 
+                             "Order", "Family", "Genus", "Species")
+
+# Import sample metadata
+mapPrelim <- read_xlsx("Manifest_All_prelim_study_forfeturetable.xlsx")
+mapPrelim
+
+
+#convert year to a factor
+mapPrelim[, 'Year'] <- lapply(mapPrelim[, 'Year'], factor)
+mapPrelim
+
+mapPrelim <- sample_data(mapPrelim)
+mapPrelim
+
+
+#Assign row names to be Sample ID's
+row.names(mapPrelim) <- mapPrelim$id
+mapPrelim
+
+sample_names(mapPrelim)
+
+sample_names(psPrelim)
+
+
+# Merge data object with sample metadata
+data_mergePrelim <- merge_phyloseq(psPrelim, mapPrelim)
+data_mergePrelim
+
+sample_names(data_mergePrelim)
+
+colnames(tax_table(data_mergePrelim))
+
+
+OTU_table_Prelim <- otu_table(data_mergePrelim)
+head(OTU_table_Prelim)
+
+#Write csv
+write.csv(OTU_table_Prelim, file = "Phyloseq_OTU_tablePrelim.csv")
+
+
+#First look at the distribution of read counts from our samples
+# Make a data frame with a column for the read counts of each sample
+
+sample_sum_df <- data.frame(sum = sample_sums(data_mergePrelim))
+sample_sum_df
+
+# Histogram of sample read counts
+ggplot(sample_sum_df, aes(x = sum)) + 
+  geom_histogram(color = "black", fill = "indianred", binwidth = 2500) +
+  ggtitle("Distribution of sample sequencing depth") + 
+  theme_bw() +
+  xlab("Read counts") +
+  theme(axis.title.y = element_blank())
+
+
+read_sums_Merged_data_from_phyloseq <- read_excel("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/read_sums_Merged_data_from_phyloseq.xlsx")
+read_sums_Merged_data_from_phyloseq
+
+# Histogram for PacBio
+His1 <- ggplot(data = subset(read_sums_Merged_data_from_phyloseq, Platform == "PacBio"), aes(x = sum)) +
+  geom_histogram(binwidth = 500, fill = "blue", color = "black") +
+  theme_bw() +
+  labs(title = "Read counts PacBio", x = "Sum", y = "Frequency") +
+  xlab("Read counts") +
+  theme(axis.title.y = element_blank())
+
+His1
+
+# Histogram for Other Platform
+His2 <- ggplot(data = subset(read_sums_Merged_data_from_phyloseq, Platform != "PacBio"), aes(x = sum)) +
+  geom_histogram(binwidth = 500, fill = "purple", color = "black") +
+  theme_bw() +
+  labs(title = "Read counts Illumina", x = "Sum", y = "Frequency") +
+  xlab("Read counts") +
+  theme(axis.title.y = element_blank())
+
+His2
+
+library(gridExtra)
+
+# Arrange the histograms together
+grid.arrange(His1, His2, ncol = 2)
+
+# mean, max and min of sample read counts
+smin <- min(sample_sums(data_mergePrelim))
+
+smean <- mean(sample_sums(data_mergePrelim))
+smax <- max(sample_sums(data_mergePrelim))
+
+
+#######################
+# Ordinate
+BIOMdatamerge_pcoa <- ordinate(
+  physeq = data_mergePrelim, 
+  method = "PCoA", 
+  distance = "bray"
+)
+
+#PCoA by year
+# Plot 
+p1a2 = plot_ordination(
+  physeq = data_mergePrelim,
+  ordination = BIOMdatamerge_pcoa,
+  color = "Year",
+  type="samples",
+  title = "PCoA of bacterial Communities"
+) +
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "white", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 3) +
+  stat_ellipse(aes(fill = Platform), type = "norm", level = 0.95, color = "#999999", size = 0.5) +
+  labs(x = "PCoA axis 1 (15.4%)",
+       y = "PCoA axis 1 (5.7%)") + 
+  theme(axis.text.x = element_text(size = 16, face='bold'))+
+  theme(axis.title=element_text(size=16, face='bold'),
+        axis.text=element_text(size=16, face='bold'),
+        strip.text=element_text(size=16, face='bold')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 16, hjust = 0.5, face='bold')) +
+  
+
+p1a2
+
+
+
+
+Tree <- "/Users/a1165255/Desktop/Microbiome Stage 1/Prelimstudy_write_up/Export_merged/tree.nwk" 
+
+# Read the tree file
+library("ape")
+tree <- read.tree(Tree)
+
+Tree2 <- "/Users/a1165255/Desktop/Microbiome Stage 1/Prelimstudy_write_up/Export_merged/tree_rooted.nwk" 
+
+# Read the tree file
+library("ape")
+tree2 <- read.tree(Tree2)
+########Rebuild phyloseq data from scratch using all the simulated data components we just generated###########
+  
+physeq2 = phyloseq(OTU_table_Prelim, psPrelim, mapPrelim, tree)
+physeq2
+
+physeq3 = phyloseq(OTU_table_Prelim, psPrelim, mapPrelim, tree2)
+physeq3
+
+BIOMdatamerge_pcoa2 <- ordinate(
+  physeq = physeq2, 
+  method = "PCoA", 
+  distance = "unifrac",  # Change to Unweighted UniFrac
+  weighted = FALSE  # Make sure to set 'weighted' to FALSE for Unweighted UniFrac
+)
+
+
+BIOMdatamerge_pcoa2
+
+####unweighted-UniFrac#####
+BIOMdatamerge_pcoa3 <- ordinate(
+  physeq = physeq2, 
+  method = "PCoA", 
+  distance = "unweighted-UniFrac",  # Change to Unweighted UniFrac
+  weighted = FALSE  # Make sure to set 'weighted' to FALSE for Unweighted UniFrac
+)
+
+
+BIOMdatamerge_pcoa3
+
+
+
+# Plot 
+
+
+p1a = plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa2,
+  color = "Platform",
+  type="samples",
+  title = "PCoA of bacterial Communities"
+) +
+  scale_color_manual(values = c("blue1", "gold", "firebrick1", "black"))+ geom_point(size=3) +
+  stat_ellipse()
+
+p1a
+
+
+###########PlatformandState########
+p1a2 <- plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa3,
+  color = "Year",
+  type = "samples",
+  title = "PCoA of bacterial Communities"
+) +
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 3) +
+  scale_fill_manual(values = c("transparent", "black"))
+
+# Add a legend for Platform
+p1a2 <- p1a2 + theme(legend.position = "bottom")
+
+# Display the plot
+p1a2
+
+p1a4 <- plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa3,
+  color = "Year",
+  type = "samples",
+  title = "PCoA of bacterial Communities"
+) +
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 3) +
+  stat_ellipse(aes(fill = Platform), type = "norm", level = 0.8, color = "#999999", size = 0.5) +
+  scale_fill_manual(values = c("transparent", "black"))
+
+p1a4 <- p1a4 + theme(legend.position = "bottom")
+p1a4
+
+p1a5 <- plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa3,
+  color = "Year",
+  type = "samples",
+  title = "PCoA of bacterial Communities"
+) +
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 3) +
+  stat_ellipse(aes(fill = State), alpha = 0, size = 1.2) +
+  scale_fill_manual(values = c("transparent", "black", "#FFFF99", "#B15928", "#1B9E77"))
+
+p1a5 <- p1a5 + theme(legend.position = "bottom")
+p1a5
+
+
+p1a6 <- plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa3,
+  color = "Year",
+  type = "samples",
+  shape= "Platform"
+) +
+  scale_x_continuous (expand = c(0, 0), breaks=c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3), limits = c(-0.4,0.4))+
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "white", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 3) +
+  stat_ellipse(aes(fill = Platform), type = "norm", level = 0.9, color = "#999999", size = 0.5) + 
+  theme(axis.text.x = element_text(size = 14, face='bold'))+
+  theme(axis.title=element_text(size=14, face='bold'),
+        axis.text=element_text(size=14, face='bold'),
+        strip.text=element_text(size=14, face='bold')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 14, hjust = 0.5, face='bold')) 
+
+p1a6 <- p1a6 + theme(legend.position = "bottom")
+p1a6
+
+
+
+##########
+plot_net(physeq2, distance = "(A+B-2*J)/(A+B)", type = "taxa", 
+         maxdist = 0.9, color="Phylum", point_label="Class")
+
+###############
+
+
+#This will
+p1a + facet_wrap(~Year, 2) + geom_point(size=3)  + stat_ellipse()
+
+p1a + facet_wrap(~Platform, 2) + geom_point(size=3) + stat_ellipse()
+
+
+
+# Plot2
+p2 = plot_ordination(physeq = data_merge,
+                     ordination = BIOMdatamerge_pcoa,
+                     type="samples", color="Year", shape="State") 
+
+
+p2
+
+
+p2 + geom_polygon(aes(fill=State)) + geom_point(size=5) + ggtitle("samples")
+#LOL
+
+p1a = plot_ordination(
+  physeq = data_merge,
+  ordination = BIOMdatamerge_pcoa,
+  color = "State",
+  type="samples",
+  title = "PCoA of bacterial Communities"
+) +
+  scale_color_manual(values = c("blue1", "gold", "firebrick1"))+ geom_point(size=3)
+
+
+#Include platform
+
+p1a <- plot_ordination(
+  physeq = data_merge,
+  ordination = BIOMdatamerge_pcoa,
+  color = "State",
+  type = "samples",
+  title = "PCoA of bacterial Communities"
+) +
+  scale_color_manual(values = c("blue1", "gold", "firebrick1")) +
+  geom_point(size = 3) +
+  geom_ellipse(aes(fill = Platform), alpha = 0, size = 1.2) +
+  scale_fill_manual(values = c("transparent", "black"))  # Adjust ellipse appearance
+
+# Add a legend for Platform
+p1a <- p1a + theme(legend.position = "bottom")
+
+# You may need to further customize legend appearance if needed
+
+p1a
+
+
+
+
+
+
+
+
+p1a + facet_wrap(~Type, 2) + geom_point(size=3)  + stat_ellipse()
+
+p1a + facet_wrap(~State, 2) + geom_point(size=3)
+
+
+#PCoA by year
+# Plot 
+p1a2 = plot_ordination(
+  physeq = data_merge,
+  ordination = BIOMdatamerge_pcoa,
+  color = "Year",
+  type="samples",
+  title = "PCoA of bacterial Communities"
+) +
+  scale_color_manual(values = c("blue1", "gold", "firebrick1", "black"))+ geom_point(size=3) +
+  stat_ellipse()
+
+p1a2
+
+
+Tree <- "/Export_merged/tree.nwk" 
+
+# Read the tree file
+library("ape")
+tree <- read.tree(Tree)
+
+########Rebuild phyloseq data from scratch using all the simulated data components we just generated###########
+
+physeqIllumina = phyloseq(OTU_table_PrelimIllumina, psPrelimIllumina, mapPrelimIllumina, tax_table(data_mergePrelimIllumina), tree)
+physeqIllumina
+
+physeqIllumina_abund <- filter_taxa(physeqIllumina, function(x) sum(x > total*0.01) > 0, TRUE)
+physeqIllumina_abund 
+
+PacBio_HM_UniFracIllumina <- plot_heatmap(physeqIllumina_abund, method = "NMDS", distance = "unweighted-UniFrac",
+                                        taxa.label = "Class", taxa.order = "Class", low = "lightblue", high = "blue", na.value = "black") +
+  theme(
+    axis.text.x = element_text(size = 12, face = "bold"),     # Increase x-axis label font size
+    axis.text.y = element_text(size = 12, face = "bold"),     # Increase y-axis label font size
+    axis.title = element_text(size = 14, face = "bold"),      # Increase axis title font size
+    plot.title = element_text(size = 16, face = "bold")       # Increase plot title font size
+  )
+
+PacBio_HM_UniFracIllumina
+
+#"Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"
+
+plot_heatmap(data_mergePrelimPacBio, method = "PCoA", distance = "bray")
+
+########Rebuild phyloseq data from scratch using all the simulated data components we just generated###########
+
+physeqPacBio = phyloseq(OTU_table_PrelimPacBio, psPrelimPacBio, mapPrelimPacBio, tax_table(data_mergePrelimPacBio), tree)
+physeqPacBio
+
+
+PacBio_HM_UniFrac <- plot_heatmap(physeqPacBio, method = "PCoA", distance = "unweighted-UniFrac",
+             low="lightblue", high="blue", na.value="black")
+PacBio_HM_UniFrac
+
+physeqPacBio_abund <- filter_taxa(physeqPacBio, function(x) sum(x > total*0.001) > 0, TRUE)
+physeqPacBio_abund
+
+
+library(ggplot2)
+
+PacBio_HM_UniFracPhylum <- plot_heatmap(physeqPacBio_abund, method = "NMDS", distance = "unweighted-UniFrac",
+                                        taxa.label = "Class", taxa.order = "Class", low = "lightblue", high = "blue", na.value = "black", VariableA = c("Year", "State"), 
+                                        transformation = "log10", 
+                                        annotation_colors=meta_colors) +
+  theme(
+    axis.text.x = element_text(size = 12, face = "bold"),     # Increase x-axis label font size
+    axis.text.y = element_text(size = 12, face = "bold"),     # Increase y-axis label font size
+    axis.title = element_text(size = 14, face = "bold"),      # Increase axis title font size
+    plot.title = element_text(size = 16, face = "bold")       # Increase plot title font size
+  )
+
+PacBio_HM_UniFracPhylum
+
+ 
+plot_richness(data_mergePrelim2, measures=c("Observed", "Chao1", "ACE", "Simpson"), x="Platform", color="Year") +
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                 "#CAB2D6", "blueviolet","cadetblue1", "white" )
+  ) +
+  geom_point(size = 2) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.title = element_text(size = 15, face = 'bold'),
+        axis.text = element_text(size = 13, face = 'bold'),
+        strip.text = element_text(size = 13, face = 'bold'),
+        strip.background = element_rect(fill = NA, color = 'black', linewidth = 0.5),
+        panel.border = element_rect(fill = NA, color = 'black'),
+        legend.position = 'right',
+        plot.title = element_text(size = 18, hjust = 0.5))
+
+
+# Extract richness data
+richness_data <- estimate_richness(data_mergePrelim_filtered, measures = c("Observed", "Chao1", "ACE", "Simpson", "invsimpson"))
+head(richness_data)
+
+# Convert sample data to data frame
+sample_data_df <- as.data.frame(sample_data(data_mergePrelim_filtered))
+head(sample_data_df)
+
+
+# Convert richness data to a data frame
+richness_df <- as.data.frame(richness_data)
+
+Illumina_PacBio_Alpha_data_ratios <- read_excel("/Illumina_PacBio_Alpha_data_ratios.xlsx")
+
+ 
+data <- Illumina_PacBio_Alpha_data_ratios
+
+library(gridExtra)
+
+# Create individual box plots
+boxplot_observed <- ggplot(data, aes(x = as.factor(Year), y = Observed, color = as.factor(Year))) + 
+  geom_boxplot() + 
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  labs(title = "Observed", x="Year", y = "Ratio Observed", color = "Year") +
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8), limits = c(0,1.8)) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+boxplot_chao1 <- ggplot(data, aes(x = as.factor(Year), y = Chao1, color = as.factor(Year))) + 
+  geom_boxplot() + 
+  labs(title = "Chao1", x="Year", y = "Ratio Chao1", color = "Year") +
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0), limits = c(0,2.0)) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+boxplot_ace <- ggplot(data, aes(x = as.factor(Year), y = ACE, color = as.factor(Year))) + 
+  geom_boxplot() + 
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  labs(title = "ACE", x="Year", y = "Ratio ACE", color = "Year") +
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0), limits = c(0,2.0)) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+boxplot_simpson <- ggplot(data, aes(x = as.factor(Year), y = Simpson, color = as.factor(Year))) + 
+  geom_boxplot() + 
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  labs(title = "Simpson", x="Year", y = "Ratio Simpson", color = "Year") +
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2), limits = c(0,1.2)) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+# Combine them in a 2x2 grid
+boxplots_grid <- grid.arrange(boxplot_observed, boxplot_chao1, boxplot_ace, boxplot_simpson, ncol = 2)
+
+
+########Hill diversity#####
+# Calculate Simpson index
+simpson_index <- function(abundance_vector) {
+  N <- sum(abundance_vector)
+  p_i <- abundance_vector / N
+  return(1 - sum(p_i^2))
+}
+
+# Apply the function to each sample
+simpson_values <- apply(otu_table(data_mergePrelim_filtered), 2, simpson_index)
+
+# Create a data frame with sample IDs and Simpson indices
+simpson_df <- data.frame(Sample = colnames(otu_table(data_mergePrelim_filtered)), Simpson_Index = simpson_values)
+simpson_df
+
+# Create a bar plot of Simpson indices
+ggplot(simpson_df, aes(x = Sample, y = Simpson_Index)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(x = "Sample", y = "Simpson Index") +
+  theme_minimal()
+
+boxplot_simpson_Hill <- ggplot(simpson_df, aes(x = Sample, y = Simpson_Index)) + 
+  geom_boxplot() + 
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  labs(title = "Simpson", x="Year", y = "Ratio Simpson", color = "Year") +
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2), limits = c(0,1.2)) +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+boxplot_simpson_Hill
+
+########Diversity 16S#########
+
+#' Diversity function for 16S amplicon data
+#'
+#' This function calculates Hill diversity metrics from 16S amplicon data (in phyloseq format).
+#' D0 (richness) is calculated with three methods: 1) Observed richness, 2) Chao1 estimator
+#' 3) breakaway method (Willis and Bunge 2016). D1 (exponential of Shannon entropy)
+#' and D2 (inverse Simpson index) are respectively Hill order 1 and 2.
+#' Errors for D1 and D2 are calculated by bootstrapping.
+#' 
+#' @param x phyloseq object generated by the phyloseq package
+#' @param R Number of bootstraps to conduct. Defaults to 999
+#' @param brea TRUE/FALSE if breakaway method for D0 estimation should be used.
+#' Defaults to TRUE. This method fails easily if you don't have atleast 6 contiguous
+#' frequencies.
+#' @param thresh Minimum sample size required to perform Chao1 estimation.
+#' @param parallel Should the calculation be parallelized? Defaults to FALSE
+#' @param ncores How many cores should be used in case of parallel computation?
+#' Defaults to 2.
+#' @keywords diversity, fcm, alpha
+#' @importFrom foreach %dopar%
+#' @importFrom stats sd
+#' @examples 
+#' # First install phyloseq if you haven't yet
+#' if(requireNamespace("phyloseq",quietly=TRUE)){
+#' library(phyloseq)
+#' } else {
+#' source("https://bioconductor.org/biocLite.R")
+#' biocLite("phyloseq")
+#' library(phyloseq)
+#' }
+#' # Load data (V3-V4 amplicon data from doi: 10.1111/2041-210X.12607)
+#' data(physeq_test)
+#' # Opting for three bootstraps, because this can take some time.
+#' Diversity_16S(phyloseq::prune_samples(phyloseq::sample_names(physeq_test) == "1", physeq_test), R=3)
+#' @export
+
+Diversity_16S <- function(x, R = 999, brea = TRUE, thresh = 200, parallel = FALSE, 
+                          ncores = 2) {
+  if (!requireNamespace("phyloseq", quietly = TRUE)) {
+    stop("Phyloseq package needed for this function to work. Please install it.",
+         call. = FALSE)
+  }
+  cat("\t**WARNING** this functions assumes that rows are samples and columns
+      \tare taxa in your phyloseq object, please verify.\n")
+  
+  # Matrix for storing data
+  DIV <- matrix(nrow = phyloseq::nsamples(x), ncol = 10)
+  row.names(DIV) <- phyloseq::sample_names(x)
+  
+  # Diversity functions
+  D0.boot <- function(x) sum(x != 0)
+  D2.boot <- function(x) 1/sum((x)^2)
+  D1.boot <- function(x) exp(-sum(x * log(x)))
+  
+  if(parallel == FALSE){
+    # Start resampling
+    for (i in 1:phyloseq::nsamples(x)) {
+      temp.D0 <- c()
+      temp.D1 <- c()
+      temp.D2 <- c()
+      temp.phy <- phyloseq::prune_samples(x = x, samples = phyloseq::sample_names(x)[i])
+      cat(paste0(date(), "\tCalculating diversity for sample ",i,"/",phyloseq::nsamples(x)," --- ",phyloseq::sample_names(x)[i], "\n"))
+      for (j in 1:R) {
+        temp <- phyloseq::rarefy_even_depth(temp.phy, verbose = FALSE, replace = TRUE)
+        # Calculate frequencies
+        temp <- data.frame(phyloseq::transform_sample_counts(temp, fun = function(x) x/sum(x))@otu_table)
+        # Calculate Diversities
+        temp.D0 <- c(temp.D0, D0.boot(temp))
+        temp.D1 <- c(temp.D1, D1.boot(temp))
+        temp.D2 <- c(temp.D2, D2.boot(temp))
+        # Store diversities at the end of resampling run
+        if (j == R) {
+          DIV[i, 1] <- mean(temp.D0)
+          DIV[i, 2] <- stats::sd(temp.D0)
+          DIV[i, 7] <- mean(temp.D1)
+          DIV[i, 8] <- stats::sd(temp.D1)
+          DIV[i, 9] <- mean(temp.D2)
+          DIV[i, 10] <- stats::sd(temp.D2)
+          remove(temp.D0, temp.D1, temp.D2)
+          # cat(paste0(date(), "\tDone with sample ", phyloseq::sample_names(x)[i], "\n"))
+        }
+      }
+      # Perform breakaway for richness estimation
+      temp <- t(matrix(temp.phy@otu_table))
+      temp <- temp[temp != 0]
+      temp <- data.frame(table(temp))
+      temp <- apply(temp, 2, FUN = function(x) as.integer(x))
+      if(brea==TRUE && phyloseq::sample_sums(temp.phy) > thresh){
+        rich <- breakaway::breakaway(temp, print = FALSE, plot = FALSE, answers = TRUE, force=TRUE)
+        if(!is.null(rich)){
+          DIV[i, 3] <- rich$est
+          DIV[i, 4] <- rich$seest
+        } else {
+          DIV[i, 3] <- NA
+          DIV[i, 4] <- NA
+        }
+      }
+      if(phyloseq::sample_sums(temp.phy) >= thresh){
+        rich.chao <- breakaway::chao1(temp, output = FALSE, answers = TRUE)
+        DIV[i, 5] <- rich.chao$est
+        DIV[i, 6] <- rich.chao$seest
+      } else {
+        DIV[i, 5] <- NA
+        DIV[i, 6] <- NA
+      }
+    }
+  } else {
+    # Initiate/register multiple cores
+    cl <- parallel::makeCluster(ncores)
+    doParallel::registerDoParallel(cl)
+    cat(date(), "\tUsing", ncores, "cores for calculations\n")
+    # Start resampling
+    for (i in 1:phyloseq::nsamples(x)) {
+      temp.D0 <- c()
+      temp.D1 <- c()
+      temp.D2 <- c()
+      temp.phy <- phyloseq::prune_samples(x = x, samples = phyloseq::sample_names(x)[i])
+      cat(paste0(date(), "\tCalculating diversity for sample ", i, "/", phyloseq::nsamples(x)," --- ", phyloseq::sample_names(x)[i], "\n"))
+      
+      # Parallelize diversity calculations 
+      tmp <- foreach::foreach(j = 1:R, .combine = rbind) %dopar% {
+        temp <- phyloseq::rarefy_even_depth(temp.phy, verbose = FALSE, replace = TRUE)
+        # Calculate frequencies
+        temp <- data.frame(phyloseq::transform_sample_counts(temp, fun = function(x) x/sum(x))@otu_table)
+        # Calculate Diversities
+        cbind(D0.boot(temp), D1.boot(temp), D2.boot(temp))
+      }
+      
+      DIV[i, c(1,7,9)] <- colMeans(tmp)
+      DIV[i, c(2,8,10)] <- apply(tmp, 2, stats::sd)
+      # if (i > 1) DIV <- rbind(DIV, matrix(c(colMeans(tmp), apply(tmp, 2, FUN = sd)), nrow = 1))
+      
+      # Perform breakaway for richness estimation
+      temp <- t(matrix(temp.phy@otu_table))
+      temp <- temp[temp != 0]
+      temp <- data.frame(table(temp))
+      temp <- apply(temp, 2, FUN = function(x) as.integer(x))
+      if(brea==TRUE && phyloseq::sample_sums(temp.phy) > thresh){
+        rich <- breakaway::breakaway(temp, print = FALSE, plot = FALSE, answers = TRUE, force=TRUE)
+        if(!is.null(rich)){
+          DIV[i, 3] <- rich$est
+          DIV[i, 4] <- rich$seest
+        } else {
+          DIV[i, 3] <- NA
+          DIV[i, 4] <- NA
+        }
+      }
+      if(phyloseq::sample_sums(temp.phy) >= thresh){
+        rich.chao <- breakaway::chao1(temp, output = FALSE, answers = TRUE)
+        DIV[i, 5] <- rich.chao$est
+        DIV[i, 6] <- rich.chao$seest
+      } else {
+        DIV[i, 5] <- NA
+        DIV[i, 6] <- NA
+      }
+      cat(paste0(date(), "\tDone with sample ", phyloseq::sample_names(x)[i], "\n"))
+    }
+    
+    if(parallel == TRUE){
+      cat(date(), "\tClosing workers\n")
+      parallel::stopCluster(cl)
+    }
+  }
+  
+  colnames(DIV) = c("D0", "sd.D0", "D0.bre" , "sd.D0.bre", "D0.chao", "sd.D0.chao", "D1", "sd.D1", "D2", 
+                    "sd.D2")
+  cat(date(), "\tDone with all", phyloseq::nsamples(x), "samples\n")
+  return(DIV)
+}
+
+library(breakaway)
+
+Hill_diversity_999perm <- Diversity_16S(
+  data_mergePrelim_filtered,
+  R = 999,
+  brea = TRUE,
+  thresh = 200,
+  parallel = FALSE,
+  ncores = 2
+)
+
+
+#D0 (Mean of non-zero count data)
+#sd.D0 (Standard deviation of non-zero count data)
+#D0.bre (Breakaway richness estimate)
+#sd.D0.bre (Standard deviation of Breakaway richness estimate)
+#D0.chao (Chao1 richness estimate)
+#sd.D0.chao (Standard deviation of Chao1 richness estimate)
+#D1 (Shannon diversity index)
+#sd.D1 (Standard deviation of Shannon diversity index)
+#D2 (Inverse Simpson diversity index)
+#sd.D2 (Standard deviation of Inverse Simpson diversity index)
+
+#########Manual Hill with coverage#########
+# Define the Shannon index function
+shannon_index <- function(abundance_vector) {
+  p_i <- abundance_vector / sum(abundance_vector)
+  p_i[p_i == 0] <- NA  # Exclude zero abundances from the calculation
+  return(-sum(p_i * log(p_i), na.rm = TRUE))
+}
+
+# Apply the function to each sample
+shannon_values <- apply(otu_table(data_mergePrelim_filtered), 2, shannon_index)
+
+# Create a data frame with sample IDs and Shannon indices
+shannon_df <- data.frame(Sample = colnames(otu_table(data_mergePrelim_filtered)), Shannon_Index = shannon_values)
+shannon_df
+
+
+##############NEW_Phyloseq_objects_for_illumina_PacBio############
+########Illumina##########
+
+
+# Set the path to the BIOM file
+biom_file <- "/Users/a1165255/Desktop/Microbiome Stage 1/Prelimstudy_write_up/Export_merged/table-with-taxonomy.biom"
+
+# Import the BIOM file into a phyloseq object
+psPrelimIllumina <- import_biom(biom_file)
+psPrelimIllumina
+
+#Check tax labels in BIOM
+colnames(tax_table(psPrelimIllumina))
+
+#Check sample labels in BIOM
+colnames(otu_table(psPrelimIllumina))
+
+#rename tax labels
+colnames(tax_table(psPrelimIllumina)) <- c("Kingdom", "Phylum", "Class", 
+                                    "Order", "Family", "Genus", "Species")
+
+# Import sample metadata
+mapPrelimIllumina <- read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Manifest_All_prelim_study_forfeturetable_testIllumina.xlsx")
+mapPrelimIllumina
+
+
+#convert year to a factor
+mapPrelimIllumina[, 'Year'] <- lapply(mapPrelimIllumina[, 'Year'], factor)
+mapPrelimIllumina
+
+mapPrelimIllumina <- sample_data(mapPrelimIllumina)
+mapPrelimIllumina
+
+
+#Assign row names to be Sample ID's
+row.names(mapPrelimIllumina) <- mapPrelimIllumina$id
+mapPrelimIllumina
+
+sample_names(mapPrelimIllumina)
+
+sample_names(psPrelimIllumina)
+
+
+# Merge data object with sample metadata
+data_mergePrelimIllumina <- merge_phyloseq(psPrelimIllumina, mapPrelimIllumina)
+data_mergePrelimIllumina
+
+sample_names(data_mergePrelimIllumina)
+
+colnames(tax_table(data_mergePrelimIllumina))
+
+
+OTU_table_PrelimIllumina <- otu_table(data_mergePrelimIllumina)
+
+
+############PacBio############
+
+# Set the path to the BIOM file
+biom_file <- "/Users/a1165255/Desktop/Microbiome Stage 1/Prelimstudy_write_up/Export_merged/table-with-taxonomy.biom"
+
+# Import the BIOM file into a phyloseq object
+psPrelimPacBio <- import_biom(biom_file)
+psPrelimPacBio
+
+#Check tax labels in BIOM
+colnames(tax_table(psPrelimPacBio))
+
+#Check sample labels in BIOM
+colnames(otu_table(psPrelimPacBio))
+
+#rename tax labels
+colnames(tax_table(psPrelimPacBio)) <- c("Kingdom", "Phylum", "Class", 
+                                    "Order", "Family", "Genus", "Species")
+
+# Import sample metadata
+mapPrelimPacBio <- read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Manifest_All_prelim_study_forfeturetable_testPacBio.xlsx")
+mapPrelimPacBio
+
+
+#convert year to a factor
+mapPrelimPacBio[, 'Year'] <- lapply(mapPrelimPacBio[, 'Year'], factor)
+mapPrelimPacBio
+
+mapPrelimPacBio <- sample_data(mapPrelimPacBio)
+mapPrelimPacBio
+
+
+#Assign row names to be Sample ID's
+row.names(mapPrelimPacBio) <- mapPrelimPacBio$id
+mapPrelimPacBio
+
+sample_names(mapPrelimPacBio)
+
+sample_names(psPrelimPacBio)
+
+###########Try_Vegan_Unifrac#########
+library(vegan)
+library(ape)
+
+phy_tree <- read.tree("/Users/a1165255/Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/tree/tree.nwk")
+
+PCoA_PacBioRelab
+
+# Convert the tibble to a data frame
+PCoA_PacBioRelab <- as.data.frame(PCoA_PacBioRelab)
+
+# Set the row names
+rownames(PCoA_PacBioRelab) <- PCoA_PacBioRelab$index
+otu_table <- PCoA_PacBioRelab[,-6]
+
+# Create a sample data frame with your metadata
+sample_data <- data.frame(
+  SampleID = rownames(otu_table),  # Match sample IDs to row names of the OTU table
+  metadata_column1 = PCoA_PacBioRelab$index,
+  metadata_column2 = PCoA_PacBioRelab$JobNo,
+  metadata_column3 = PCoA_PacBioRelab$Year,
+  metadata_column4 = PCoA_PacBioRelab$Town,
+  metadata_column5 = PCoA_PacBioRelab$State,
+  metadata_column6 = PCoA_PacBioRelab$Seq_platform
+)
+
+# Create a phyloseq object
+physeq <- phyloseq(
+  otu_table = otu_table,
+  sample_data = sample_data,
+  tree = phy_tree
+)
+
+# Calculate UniFrac distances
+unifrac_dist <- UniFrac(physeq, weighted = TRUE)
+
+################
+library(ape)
+library(GUniFrac)
+
+# Convert phylogenetic tree to distance matrix
+phy_dist <- cophenetic(phy_tree)
+
+subset_tree <- drop.tip(phy_tree, phy_tree$tip.label[101:length(phy_tree$tip.label)])
+subset_tree
+
+phy_distsub <- cophenetic(subset_tree)
+
+# Assuming 'phy_tree' is your phylogenetic tree
+library(phyloseq)
+
+# Create a sample data frame with your metadata
+sample_data <- data.frame(
+  SampleID = rownames(otu_table),  
+  metadata_column1 = PCoA_PacBioRelab$index,
+  metadata_column2 = PCoA_PacBioRelab$JobNo,
+  metadata_column3 = PCoA_PacBioRelab$Year,
+  metadata_column4 = PCoA_PacBioRelab$Town,
+  metadata_column5 = PCoA_PacBioRelab$State,
+  metadata_column6 = PCoA_PacBioRelab$Seq_platform
+)
+
+# Create a phyloseq object
+physeq <- phyloseq(
+  otu_table = otu_table,
+  sample_data = sample_data,
+  tree = phy_tree
+)
+
+# Calculate UniFrac distances
+unifrac_dist <- UniFrac(physeq, weighted = TRUE)
+
+
+physeq
+
+######Illumina#####
+library(ggforce)
+library(ggplot2)
+
+PCoA_Illumina = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/level-7_Illumina.xlsx")
+
+
+com_Illumina_org = PCoA_Illumina[,6:ncol(PCoA_Illumina)]
+m_com_Illumina_org = as.matrix(com_Illumina_org)
+
+set.seed(123)
+
+
+bc_dist_com_Illumina_org <- vegdist(m_com_Illumina_org, method = "bray")
+PCoA_Illumina_res <- cmdscale (bc_dist_com_Illumina_org, eig = TRUE,k = 2)
+PCoA_Illumina_res
+
+# examine the percent variation in the data set that is explained by the first two axis of the PCoA
+
+
+explainedvar1 <- round(PCoA_Illumina_res$eig[1] / sum(PCoA_Illumina_res$eig), 2) *100
+explainedvar1
+
+explainedvar2 <- round(PCoA_Illumina_res$eig[2] / sum(PCoA_Illumina_res$eig), 2) *100
+explainedvar2 
+
+sum_eig <- sum(explainedvar1, explainedvar2)
+sum_eig
+
+PCoA_Illumina_axis = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/Bray_curtis_PCoA_illumina.xlsx")
+PCoA_Illumina_axis
+
+#Made tsv file of variables and PCoA eigenvalues, then plot data
+
+
+
+PCoA_Illumina_axis_plot <- ggplot(data = PCoA_Illumina_axis, aes(x=Axis1, y=Axis2, group=State)) +
+  geom_point(aes(colour=State), size=3)+
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                              "0099CC", "9900CC", "purple", "009999", "33FF99"))+
+  labs(title = "PCoA of Bray-Curtis Distances State",
+       x = "PCoA axis 1 (38%)", y = "PCoA axis 2 (11%)", col="State")+
+  theme_bw()+
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 11, hjust = 0.5)) 
+
+PCoA_Illumina_axis_plot
+
+PCoA_Illumina_axis_plot2 <- ggplot(data = PCoA_Illumina_axis, aes(x=Axis1, y=Axis2, color = as.factor(Year), group = State)) +
+  geom_point(size = 2) +
+  stat_ellipse(geom = "polygon", aes(fill = State), alpha = 0.1, color = "black") + # Add ellipses
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                                "0099CC", "9900CC", "purple", "009999", "33FF99")) + # Adjust color scale
+  scale_fill_manual(values = alpha(c("#FF7F00", "#33A02C", "#E7298A", "#E31A1C", "#FDBF6F",
+                                     "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                     "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                                     "0099CC", "9900CC", "purple", "009999", "33FF99"), 0.2)) + # Adjust ellipse fill colors and transparency
+  labs(x = "PCoA axis 1 (38%)", y = "PCoA axis 2 (11%)", col = "Year") +
+  theme_bw()+
+  theme(axis.text.x = element_text(size = 12, vjust = 0.5, hjust = 0.5))+
+  theme(axis.title=element_text(size=12, face='bold'),
+        axis.text=element_text(size=12, face='bold'),
+        strip.text=element_text(size=12, face='bold'),
+        strip.background=element_rect(fill=NA, color='black', size=0.5),
+        panel.border=element_rect(fill=NA, color='black')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 14, hjust = 0.5, face='bold')) 
+
+PCoA_Illumina_axis_plot2
+
+#######PACBio#######
+
+PCoA_PacBio = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/level-7_PacBio_for_PCoA.xlsx")
+PCoA_PacBio
+
+com_PacBio_org = PCoA_PacBio[,6:ncol(PCoA_PacBio)]
+m_com_PacBio_org = as.matrix(com_PacBio_org)
+
+set.seed(123)
+
+
+bc_dist_com_PacBio_org <- vegdist(m_com_PacBio_org, method = "bray")
+PCoA_PacBio_res <- cmdscale (bc_dist_com_PacBio_org, eig = TRUE,k = 2)
+PCoA_PacBio_res
+
+# examine the percent variation in the data set that is explained by the first two axis of the PCoA
+
+
+explainedvar1 <- round(PCoA_PacBio_res$eig[1] / sum(PCoA_PacBio_res$eig), 2) *100
+explainedvar1
+
+explainedvar2 <- round(PCoA_PacBio_res$eig[2] / sum(PCoA_PacBio_res$eig), 2) *100
+explainedvar2 
+
+sum_eig <- sum(explainedvar1, explainedvar2)
+sum_eig
+
+PCoA_PacBio_axis = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/Bray_curtis_PCoA_PacBio.xlsx")
+PCoA_PacBio_axis
+
+#Made tsv file of variables and PCoA eigenvalues, then plot data
+
+#convert year to a factor
+PCoA_PacBio_axis [, 'Year'] <- lapply(PCoA_PacBio_axis[, 'Year'], factor)
+PCoA_PacBio_axis
+
+PCoA_PacBio_axis_plot <- ggplot(data = PCoA_PacBio_axis, aes(x=`[,1]`, y=`[,2]`, group=State)) +
+  geom_point(aes(colour=State), size=3)+
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                              "0099CC", "9900CC", "purple", "009999", "33FF99"))+
+  labs(title = "PCoA of Bray-Curtis Distances State",
+       x = "PCoA axis 1 (24%)", y = "PCoA axis 2 (10%)", col="State")+
+  theme_bw()+
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 11, hjust = 0.5)) 
+
+PCoA_PacBio_axis_plot
+
+
+#test
+
+PCoA_PacBio_axis_plot2 <- ggplot(data = PCoA_PacBio_axis, aes(x = `[,1]`, y = `[,2]`, color = as.factor(Year), group = State)) +
+  geom_point(size = 2) +
+  stat_ellipse(geom = "polygon", aes(fill = State), alpha = 0.1, color = "black") + # Add ellipses
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                                "0099CC", "9900CC", "purple", "009999", "33FF99")) + # Adjust color scale
+  scale_fill_manual(values = alpha(c("#FF7F00", "#33A02C", "#E7298A", "#E31A1C", "#FDBF6F",
+                                     "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                     "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD", "3300CC", "blue",
+                                     "0099CC", "9900CC", "purple", "009999", "33FF99"), 0.2)) + # Adjust ellipse fill colors and transparency
+  labs(x = "PCoA axis 1 (24%)", y = "PCoA axis 2 (10%)", col = "Year") +
+  theme_bw()+
+  theme(axis.text.x = element_text(size = 12, vjust = 0.5, hjust = 0.5))+
+  theme(axis.title=element_text(size=12, face='bold'),
+        axis.text=element_text(size=12, face='bold'),
+        strip.text=element_text(size=12, face='bold'),
+        strip.background=element_rect(fill=NA, color='black', size=0.5),
+        panel.border=element_rect(fill=NA, color='black')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 14, hjust = 0.5, face='bold')) 
+
+PCoA_PacBio_axis_plot2
+
+
+###########
+########RATIOS######
+
+
+Shannon_Ratio = read_xlsx("Desktop/R_analysis_folder_Nov_2022/Shannon_ratios_28_10_22_barchart.xlsx")
+
+Shannon_Ratio_Hill = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Shannon_ratios_Hill_vs_not.xlsx")
+
+#convert year to a factor
+Shannon_Ratio [, 'Year'] <- lapply(Shannon_Ratio[, 'Year'], factor)
+Shannon_Ratio
+
+#convert year to a factor
+Shannon_Ratio_Hill [, 'Year'] <- lapply(Shannon_Ratio_Hill[, 'Year'], factor)
+Shannon_Ratio_Hill
+
+# Try box plots
+Shannonlvl7_Ratio_plot_yr <- ggplot(data = Shannon_Ratio, mapping = aes(x = Year, y = Ratio, color = Year)) +
+  geom_boxplot() +
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2), limits = c(0,1.2))+
+  labs(
+       x="Year",
+       y="Alpha diversity ratio") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+Shannonlvl7_Ratio_plot_yr
+
+
+
+###########Shannon hill Ratio PLOT####
+
+ShannonHill_Ratio_plot_yr <- ggplot(data = Shannon_Ratio_Hill, mapping = aes(x = Year, y = Shannon_hill_Ratio, color = Year)) +
+  geom_boxplot() +
+  scale_color_manual(values=c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                              "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                              "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD"))+
+  scale_y_continuous(expand = c(0, 0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2), limits = c(0,1.2))+
+  labs(
+    x="Year",
+    y="Alpha diversity ratio") +
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size = 12, angle = 90, vjust = 0.5, hjust = 1, face='bold'),
+    axis.title = element_text(size=12, face='bold'),
+    axis.text = element_text(size=12, face='bold'),
+    strip.text = element_text(size=12, face='bold'),
+    strip.background = element_rect(fill=NA, color='black', size=0.5),
+    panel.border = element_rect(fill=NA, color='black'),
+    legend.position = "right", 
+    plot.title = element_text(size = 14, face='bold', hjust = 0.5, vjust = 0.5)
+  ) 
+
+ShannonHill_Ratio_plot_yr
+
+# Homogeneity of dispersion test
+permutest(betadisper(bc_dist_com_G2_org, PCoAmatrix_G2$Sample))
+
+# PERMANOVA analysis
+adonis2(bc_dist_com_G2_org ~ Sample, data = PCoAmatrix_G2, permutations = 999)
+
+# arrange graphs
+
+P3 <- ggarrange(PCoA_Illumina_axis_plot2,PCoA_PacBio_axis_plot2,Shannonlvl7_Ratio_plot_yr, ncol=2,nrow=2,labels=c("a)","b)","c)"),common.legend = FALSE,widths=2,heights=4, align = "hv", legend="right")
+
+
+#
+P3
+
+# Try modifing ledgend param
+
+# Modify PCoA_PacBio_axis_plot2 and Shannonlvl7_Ratio_plot_yr to share a common legend
+PCoA_PacBio_axis_plot2 <- PCoA_PacBio_axis_plot2 + theme(legend.position = "none")
+Shannonlvl7_Ratio_plot_yr <- Shannonlvl7_Ratio_plot_yr + theme(legend.position = "right")
+
+# Arrange the plots
+P4 <- ggarrange(PCoA_Illumina_axis_plot2, PCoA_PacBio_axis_plot2, Shannonlvl7_Ratio_plot_yr, ncol = 2, nrow = 2, 
+                labels = c("a)", "b)", "c)"), common.legend = TRUE, widths = 2, heights = 4, align = "hv")
+
+P4
+
+# Extract the legend from PCoA_PacBio_axis_plot2
+legend_plot <- cowplot::get_legend(PCoA_PacBio_axis_plot2)
+legend_plot
+# Create an empty plot with just the legend
+empty_plot <- ggplot() + theme_void() +
+  theme(legend.position="bottom")
+
+# Arrange the legend and empty plot
+combined_legend_plot <- ggarrange(legend_plot, empty_plot,
+                                  ncol = 2, nrow = 1, 
+                                  widths = 1.5, heights = 1,
+                                  align = "hv")
+combined_legend_plot
+
+# Arrange the main plots along with the combined legend plot
+
+P4 <- ggarrange(Shannonlvl7_Ratio_plot_yr, "blank", PCoA_Illumina_axis_plot2, PCoA_PacBio_axis_plot2,
+                ncol = 2, nrow = 2, 
+                labels = c("a)", "b)", "c)", "d)"),
+                common.legend = 3, 
+                widths = 2, heights = 4, 
+                align = "hv")
+
+# Print the final plot
+P4
+
+# Assuming PCoA_Illumina_axis_plot2 has the desired legend
+legend_for_P5 <- get_legend(PCoA_Illumina_axis_plot2)
+
+# Remove the legend from the original plots
+Shannonlvl7_Ratio_plot_yr <- Shannonlvl7_Ratio_plot_yr + theme(legend.position="none")
+PCoA_PacBio_axis_plot2 <- PCoA_PacBio_axis_plot2 + theme(legend.position="none")
+
+# Arrange the plots without the legends
+P5 <- ggarrange(Shannonlvl7_Ratio_plot_yr, "blank", PCoA_Illumina_axis_plot2, PCoA_PacBio_axis_plot2,
+                ncol = 2, nrow = 2, 
+                labels = c("a)", "b)", "c)", "d)"),
+                common.legend = TRUE, 
+                widths = 2, heights = 4, 
+                align = "hv")
+
+# Manually add the legend to Shannonlvl7_Ratio_plot_yr
+P5 <- P5 + guides(color = guide_legend(title = "Year")) +
+  theme(legend.position="right")
+
+# Print the final plot
+P5
+####Grouped_with_phyloseq#####
+#Refer 
+p1a6 <- plot_ordination(
+  physeq = physeq2,
+  ordination = BIOMdatamerge_pcoa3,
+  color = "Year",
+  type = "samples",
+  shape= "Platform"
+) +
+  scale_x_continuous (expand = c(0, 0), breaks=c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3), limits = c(-0.4,0.4))+
+  theme_bw() +
+  scale_color_manual(values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F", "#FF7F00",
+                                "#CAB2D6", "#6A3D9A", "white", "#B15928", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                                "#66A61E", "#E6AB02", "#A6761D", "#666666", "#999999", "#E5D8BD")) +
+  geom_point(size = 2) +
+  stat_ellipse(aes(fill = Platform), type = "norm", level = 0.90, color = "#999999", size = 0.5) +
+  labs(x = "PCoA axis 1 (9%)",
+       y = "PCoA axis 2 (4.7%)") + 
+  theme(axis.text.x = element_text(size = 12, face='bold'))+
+  theme(axis.title=element_text(size=12, face='bold'),
+        axis.text=element_text(size=12, face='bold'),
+        strip.text=element_text(size=12, face='bold')) + 
+  theme(legend.position = "right", 
+        plot.title= element_text(size = 12, hjust = 0.5, face='bold')) 
+
+p1a6 <- p1a6 + theme(legend.position = "bottom")
+p1a6
+library(ggpubr)
+# Arrange the plots without the legends
+P6 <- ggarrange(Shannonlvl7_Ratio_plot_yr, p1a6, PCoA_Illumina_axis_plot2, PCoA_PacBio_axis_plot2,
+                ncol = 2, nrow = 2, 
+                labels = c("a)", "b)", "c)", "d)"),
+                common.legend = TRUE, 
+                widths = 2, heights = 4, 
+                align = "hv")
+
+# Print the final plot
+P6
+
+# Assuming PCoA_Illumina_axis_plot2 has been created earlier
+
+
+
+P3 <- ggarrange(
+  Shannonlvl7_Ratio_plot_yr,"blank", PCoA_Illumina_axis_plot2, 
+  PCoA_PacBio_axis_plot2,
+  ncol = 2, 
+  nrow = 2, 
+  labels = c("a)", "b)", "c)"), 
+  common.legend = TRUE, 
+  widths = 2, 
+  heights = 4, 
+  align = "hv",
+  legend = "right"  # This will place the legend to the right of the plots
+)
+
+P3
+# save it
+dev.off()
+
+#save a graph
+
+ggsave("Tlc1Foci_nab2_distrib15jul15.png",plot=p2, path="C:\\Users\\bartl\\OneDrive - USherbrooke\\Postdoc\\R_work\\Plots\\",device="png", width=50, height=20, units="cm")

@@ -1,0 +1,98 @@
+library(vegan) # for vegetation and community analysis
+library(dplyr) # for data manipulation
+
+##########Find Indicator species###############
+install.packages("indicspecies")
+library(indicspecies)
+
+Indisp_Prelim = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/level-2_PacBio_illumina.xlsx")
+Indisp_Prelimsp = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/level-7_PacBio_illumina_Relab.xlsx")
+
+Indisp_PrelimLN = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/lvl2_Illumina_PacBio_LNtrans.xlsx")
+Indisp_PrelimRA = read_xlsx("Desktop/Microbiome Stage 1/Prelimstudy_write_up/Illumina_PacBio_merge_for_anal/visualisations/lvl2_Illumina_PacBio_RAtrans.xlsx")
+Indisp_PrelimRA
+
+#convert year to a factor
+Indisp_Prelim[, 'Year'] <- lapply(Indisp_Prelim[, 'Year'], factor)
+Indisp_Prelim
+
+Indisp_Prelimsp[, 'Year'] <- lapply(Indisp_Prelimsp[, 'Year'], factor)
+Indisp_Prelimsp
+
+abund = Indisp_Prelim[,7:ncol(Indisp_Prelim)]
+abund
+
+state = Indisp_Prelim$State
+year = Indisp_Prelim$Year
+platform = Indisp_Prelim$Seq_platform
+
+
+abundsp = Indisp_Prelimsp[,7:ncol(Indisp_Prelimsp)]
+abundsp
+
+statesp = Indisp_Prelimsp$State
+yearsp = Indisp_Prelimsp$Year
+platformsp = Indisp_Prelimsp$Seq_platform
+
+#convert year to a factor
+Indisp_PrelimLN[, 'Year'] <- lapply(Indisp_PrelimLN[, 'Year'], factor)
+Indisp_PrelimLN
+
+abundLN = Indisp_PrelimLN[,7:ncol(Indisp_PrelimLN)]
+abundLN
+
+state = Indisp_PrelimLN$State
+year = Indisp_PrelimLN$Year
+platform = Indisp_PrelimLN$Seq_platform
+
+#convert year to a factor
+Indisp_PrelimRA[, 'Year'] <- lapply(Indisp_PrelimRA[, 'Year'], factor)
+Indisp_PrelimRA
+
+
+abundRA = Indisp_PrelimRA[,7:ncol(Indisp_PrelimRA)]
+abundRA
+
+state = Indisp_PrelimRA$State
+year = Indisp_PrelimRA$Year
+platform = Indisp_PrelimRA$Seq_platform
+
+#Next we can run the indicator species command:
+inv = multipatt(abundRA, platformsp, func = "r.g", control = how(nperm=9999))
+
+invLN = multipatt(abundLN, platformsp, func = "r.g", control = how(nperm=9999))
+
+#multipatt is the name of the command from the indicspecies package. The mulitpatt command results in lists of species that are associated with a particular group of samples. If your group has more than 2 categories, multipatt will also identify species that are statistically more abundant in combinations of categories.
+
+#The parameters for multipatt are as follows:
+#the community abundance matrix:"abund"
+#the vector that contains your sample grouping information: "time"
+#the function that multipatt is using to identify indicator species: func = "r.g"
+#the number of permutations used in the statistical test: control = how(nperm=9999)
+
+#view the results, will only return the statistically significant species ( p < 0.05)
+#I use these results to help me get an initial overview of the species that might be more interesting to investigate. 
+#To display these results visually, I often use a boxplot to show the differences in distribution of these identified, statistically significant species between my groupings.
+summary(inv)
+
+summary(invLN)
+
+dat.multipatt.summary<-capture.output(summary(inv, indvalcomp=TRUE))
+
+dat.multipatt.summary
+
+
+write.csv(dat.multipatt.summary,'indicspecies_PrelimPhyla_RA_Platform.csv')
+
+
+# Capture the summary output
+summary_data <- capture.output(summary(inv, indvalcomp=TRUE))
+summary_data
+
+summary_data2 <- capture.output(dat.multipatt.summary, indvalcomp=TRUE)
+summary_data2
+
+# Write the captured output to a CSV file
+writeLines(summary_data2, "indicspecies_Prelimsp_Platform_again2.csv")
+
+
